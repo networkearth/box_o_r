@@ -12,4 +12,5 @@ RUN apt-get -y install r-base r-base-dev
 RUN apt-get -y install libcurl4-openssl-dev libssl-dev \
     libgit2-dev libfontconfig1-dev libharfbuzz-dev \
     libfribidi-dev libfreetype6-dev libpng-dev \
-    libtiff5-dev libjpeg-dev libxml2-dev
+    libtiff5-dev libjpeg-dev libxml2-dev \
+    pandoc
