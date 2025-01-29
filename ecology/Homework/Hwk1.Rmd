@@ -1,0 +1,228 @@
+---
+title: "Homework 1"
+---
+
+```{r}
+library(tidyr)
+library(ggplot2)
+library(corrgram)
+library(Hmisc)
+```
+
+## Load and Standardize Data
+
+```{r}
+data = read.csv("../Data/BeringRecruits.csv", row.names=1)
+max_per_column = apply(data, 2, max, na.rm=T)
+data = sweep(data, 2, max_per_column, "/")
+head(data)
+```
+
+## 1. Examine distribution of standardized and transformed data 
+
+We will move through each of the transformations in turn starting with raw, then log transformed, and finally the square root.
+
+### Raw Data
+
+```{r}
+data_long <- pivot_longer(data, cols = everything(), names_to = "species", values_to = "recruitment")
+ggplot(data_long, aes(x = recruitment)) +
+  geom_histogram(binwidth = .1, fill = "blue", color = "white") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Histogram by Species", x = "% Max Recruitment", y = "Count")
+
+ggplot(data_long, aes(sample = recruitment)) +
+  stat_qq() +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Faceted QQ Plots by Species", x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+shapiro.test(data_long$recruitment)
+```
+
+Visually these distributions seem right skewed and therefore not at all normal. This is backed up both by the QQ plots and the fact that the p-value on the Shapiro-Wilk test is much less than 0.05 (in fact it is very close to zero).
+
+### Log Transformed Data
+
+```{r}
+data_long <- pivot_longer(data, cols = everything(), names_to = "species", values_to = "recruitment")
+data_long[, "recruitment"] = log(data_long[, "recruitment"])
+ggplot(data_long, aes(x = recruitment)) +
+  geom_histogram(binwidth = .1, fill = "blue", color = "white") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Histogram by Species", x = "Log(% Max Recruitment)", y = "Count")
+
+ggplot(data_long, aes(sample = recruitment)) +
+  stat_qq() +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Faceted QQ Plots by Species", x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+shapiro.test(data_long$recruitment)
+```
+
+In this case with the exception of YFS these histograms look far more centered than the raw data. The QQ plots are also significantly better 
+and the Shapiro-Wilk test is now greater than 0.05 across all species. This is our best candidate for normality so far. 
+
+### Square Root Transformed Data
+
+```{r}
+data_long <- pivot_longer(data, cols = everything(), names_to = "species", values_to = "recruitment")
+data_long[, "recruitment"] = sqrt(data_long[, "recruitment"])
+ggplot(data_long, aes(x = recruitment)) +
+  geom_histogram(binwidth = .1, fill = "blue", color = "white") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Histogram by Species", x = "Sqrt(% Max Recruitment)", y = "Count")
+
+ggplot(data_long, aes(sample = recruitment)) +
+  stat_qq() +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  facet_wrap(~ species, scales = "free") +
+  theme_minimal() +
+  labs(title = "Faceted QQ Plots by Species", x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+shapiro.test(data_long$recruitment)
+```
+
+While this is certainly better than simple raw data, the log transformed data is still the best with better QQ plots and 
+a Shapiro-Wilk test with a p-value greater that 0.05. We will use the log transformed data moving forward. 
+
+
+## 2. Parallel coordinates plot 
+
+```{r}
+data$year = as.numeric(rownames(data))
+data_long <- pivot_longer(data, cols = -year, names_to = "species", values_to = "recruitment")
+data_long$transformed = log(data_long$recruitment)
+```
+
+```{r}
+ggplot(data_long, aes(x = year, y = transformed, color = species, group = species)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +  # Optional: Add points to the lines
+  theme_minimal() +
+  labs(
+    title = "Parallel Plot Over Time for Each Species",
+    x = "Year",
+    y = "Log Transformed % of Max Recruitment",
+    color = "Species"
+  )
+```
+
+For this plot we used % of maximum as our standardization and the logarithm as our transform. Looking at this I don't see any 
+year over year patterns that I would personally stand behind although there are perhaps some "hints". Specifically it looks like 
+the "cod" and "wp" species tend to track with one another better than they do the other species, but if I'm being honest
+I'm only seeing this because after scanning through the homework I know they are both gadids. 
+
+## 3. Pairwise relationships among recruitment time series 
+
+```{r}
+transformed_data = data[, c("cod", "wp", "ATF", "YFS", "RS", "FHS")]
+transformed_data = log(transformed_data)
+```
+
+Correlations (pearsons) of the log transformed data:
+
+```{r}
+results <- rcorr(as.matrix(transformed_data), type = "pearson") 
+correlations <- results$r
+print(correlations)
+```
+
+And here we have the p-values of those correlations.
+
+```{r}
+p_values <- results$P   
+print(p_values)
+```
+
+For convenience here is a table indicating which p-values are low enough to reject the null hypothesis (that the correlation coefficient observed came from a population with no correlation). In otherwords where the table has a TRUE we can say the correlation is signficant. 
+```{r}  
+print(p_values < 0.05)
+```
+
+Finally a graphical representation of the correlations.
+
+```{r}
+corrgram(transformed_data, order=TRUE, main="Correlations of Log Transformed % of Max Recruitment by Species",
+         panel=panel.pts, text.panel=panel.txt, 
+         upper.panel = panel.cor, 
+         diag.panel=panel.density)
+```
+
+The general pattern here seems to be that cod and wp are correlated with each other and anti correlated with everything else (except FHS and wp) whereas the other species have 
+no significant correlations with one another besides RS and ATF. 
+
+## 4. Examine variability for two groups of species 
+
+
+First the parallel plot over time:
+```{r}
+copy = transformed_data
+averages = apply(copy, 2, mean, na.rm=T)
+stds = apply(copy, 2, sd, na.rm=T)
+copy = sweep(copy, 2, averages, "-")
+copy = sweep(copy, 2, stds, "/")
+
+copy$gadid = apply(copy[, c("cod", "wp")], 1, mean, na.rm=T)
+copy$flatfish = apply(copy[, c("ATF", "YFS", "RS", "FHS")], 1, mean, na.rm=T)
+copy$year = as.numeric(rownames(copy))
+
+data_long <- pivot_longer(copy[, c("year", "gadid", "flatfish")], cols = c("gadid", "flatfish"), names_to = "species", values_to = "index")
+ggplot(data_long, aes(x = year, y = index, color = species, group = species)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +  # Optional: Add points to the lines
+  theme_minimal() +
+  labs(
+    title = "Parallel Plot Over Time for Each Group",
+    x = "Year",
+    y = "Index",
+    color = "Group"
+  )
+```
+
+
+```{r}
+results <- rcorr(as.matrix(copy[,c("gadid", "flatfish")]), type = "pearson") 
+correlations <- results$r        
+print(correlations)
+```
+
+```{r}
+p_values <- results$P  
+print(p_values)
+```
+
+We found the spearman correlation coefficient to be -0.54 with a p-value of 0.0011. This means that we have a significant anti correlation between the two groups 
+as we would expect from the pairwise correlations in the last section. 
+
+## 5. Using a PCA to extract the common pattern 
+
+```{r}
+R.pca = princomp(cor(transformed_data, use="pair"))
+
+PC1.loadings = loadings(R.pca)[,1]
+```
+
+The loadings are positive for our gadids and negative for our flatfish which is consistent with the correlations we saw in the last couple of questions.
+
+
+```{r}
+PC1.scores = t(matrix(PC1.loadings,  1) %*% t(as.matrix(transformed_data)))
+
+# plot the scores over time
+plot(1975:2007, PC1.scores, type="l", xlab="Year", ylab="PC1 Score", main="PC1 Scores Over Time")
+```
+
+Given the loadings we would expect high values to be associated with higher gadid recruitment and lower years 
+to be associated with higher flatfish recruitment. Comparing to our pairwise plot this seems to be the case. 
+
+## 6. Conclusion
+
+In conclusion we found that gadids and flatfish as groups have strong anti-correlation with one another but that while 
+gadids are significantly correlated with one another flatfish are not. 
